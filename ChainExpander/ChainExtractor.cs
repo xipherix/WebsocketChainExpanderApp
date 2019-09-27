@@ -407,7 +407,7 @@ namespace ChainExpander
                         var ricName = message.Key==null?string.Empty:MarketDataUtils.StringListToString(message.Key.Name);
 
                         if (string.IsNullOrEmpty(ricName))
-                            return;
+                            break;
                         // Console.WriteLine($"Status message Ric Name:{ricName} {message.State.Text}");
                         //Check if item stream is closed or closed recover and resend item request again if Login still open.
 

@@ -1,8 +1,11 @@
 # Building a Chain Expander application using Elektron Websocket API and .NET Core C# 
 
-[Elektron WebSocket API](https://developers.refinitiv.com/elektron/WebSocket-api/learning) is a server-side API which provides an interface to create direct WebSocket access to any OMM Content via ADS. The API leverages standard JSON and WebSocket protocols to be easy to implement and understand. A developer can use any programming language which provides a JSON parser and a client WebSocket library to connecting to the ADS server and then retrieving the data using a messages specification provided on [WebSocket API Developer Guide](https://docs-developers.refinitiv.com/1563871102906/14977/). 
+[Elektron WebSocket API](https://developers.refinitiv.com/elektron/WebSocket-api/learning) is a server-side API which provides an interface to create direct WebSocket access to any OMM Content via ADS. The API leverages standard JSON and WebSocket protocols to be easy to implement and understand. It does mean the software developer can use any programming language with the WebSocket API. It requires a JSON parser with a Client WebSocket library for connecting to the server and sends or receive data using a messages specification provided on [WebSocket API Developer Guide](https://docsdevelopers.refinitiv.com/1563871102906/14977/). 
+ 
+This article provides a sample application which illustrates how to use Elektron Websocket API to retrieve a Chain Records and get underlying RIC symbols. The use case is a solution for one of the popular questions regarding how can we automatically retrieving a list of all RIC symbols available on Elektron Realtime data feed. There is no capability on the data feed to provide all RIC symbols available for the user. However, there is a choice for the user to expanding  Chain RIC for specific market index or Stock Exchange and then get a list of RIC symbols instead. Anyway, the user has to know Chain RIC in advance. If you are not familiar with the Chain, you can find additional details from [About Chain ariticle](https://developers.refinitiv.com/article/elektron-article-1#AboutChains). It is a well-explained article about Chain RIC and its usage. Our sample application applies the methods described in the article with the WebSocket API to expanding Chain RIC.  
 
-This article provides a sample Elektron WebSocket API application which demonstrates a solution to solve one of the most popular questions from our user, it's a question about how can we automatically retrieving a list of all RIC symbols available on Elektron Realtime. In fact, Elektron itself does not provide a capability to provide a list of all RIC available for the user. However, the popular solution for the use-case is to expanding a Chain instrument to retrieve a list of RIC symbol for specific market index or Stock Exchange. If you are not familiar with a Chain, you can find additional details from [About Chain ariticle](https://developers.refinitiv.com/article/elektron-article-1#AboutChains). It is a well-explained article about Chain RIC and its usage and our sample application apply the methods described in the article with the WebSocket API to retrieving and expanding the Chain instrument.  This sample application also utilizes a C# code from WebsocketAdapter project from  [the MRNWebSocketViewer Github repository](https://github.com/Refinitiv-API-Samples/Example.WebSocketAPI.CSharp.MRNWebSocketViewer), therefore this article will describe only the detail about the Chain expanding logic and related implementation and it will not provide the details about how it uses C# ClientWebsocket class to communicate with the server.
+This sample application also utilizes C# codes from WebsocketAdapter project from  [the MRNWebSocketViewer Github repository](https://github.com/Refinitiv-API-Samples/Example.WebSocketAPI.CSharp.MRNWebSocketViewer), 
+to manage WebSocket client connection and send or receive messages. Thus this article will describe only the detail about the Chain expanding logic and related implementation. It will not provide dept details regarding how it uses C# ClientWebsocket class to communicate with the server.
 
 ## Prerequisites
 
@@ -11,16 +14,16 @@ This article provides a sample Elektron WebSocket API application which demonstr
 * Understand [WebSocket API Usages.](https://docs-developers.refinitiv.com/1563871102906/14977/).
 * Understand [usage of ClientWebsocket class.](https://docs.microsoft.com/en-us/dotnet/api/system.net.websockets.clientwebsocket?view=netcore-2.2).
 * [.NET Core 2.2 or later version](https://dotnet.microsoft.com/download/dotnet-core/) 
-* Visual Studio 2017 or 2019 or [Visual Studio Code](https://code.visualstudio.com/) to open project, compile and build solution. 
+* Visual Studio 2017 or 2019 or [Visual Studio Code](https://code.visualstudio.com/) to open project, compile and build a solution. 
 
 ### What is a Chain RIC?
 
-We will provide you summary details of the Chain before we move to the next topics about the chain processing logic and .NET core implementation. Basically, Chain Records are used to hold RIC symbols that have a common association. It's actually a legacy of an older data distribution protocol called Marketfeed and still available to request from Elektron by using Market Price domain based on Reuters Domain Models (RDM). The Chain does not use to provide a price or market movement. Instead, it provides a list of particular RIC/constituent such as a list of RIC for particular market e.g. a list of strike prices on a particular option contract. 
+We will provide you summary details of the Chain before we move to the next topics about the chain processing logic and .NET core implementation. Chain Records are used to hold RIC symbols that have a common association. It's a legacy of an older data distribution protocol called Marketfeed and still available to request from Elektron by using Market Price domain based on Reuters Domain Models (RDM). The Chain itself does not provide a price or market movement. Instead, it gives a list of particular RIC/constituent such as a list of RIC for a specific market, e.g., a list of strike prices for a particular option contract. 
 
 The following RIC is a sample Chain RIC.
 
 ```
-Chain 0#UNIVERSE.NB provides Nasdaq Basic RIC and it also provides Best Bid and Offer and Last Sale information for all U.S. exchange-listed securities based on liquidity within the Nasdaq market center, as well as trades,  reported to the FINRA/Nasdaq Reporting Facility TM(TRFTM).
+Chain 0#UNIVERSE.NB provides Nasdaq Basic RIC, and it also provides Best Bid and Offer and Last Sale information for all U.S. exchange-listed securities based on liquidity within the Nasdaq market center, as well as trades,  reported to the FINRA/Nasdaq Reporting Facility TM(TRFTM).
 
 Chain  0#AMEXCONS.K provide Amex consolidated RICs for NYSE.
 Chain  0#ARCACONS.K provide Arca consolidated RICs for NYSE.
@@ -31,21 +34,21 @@ Chain 0#UNIVERSE.PK provides the Pink sheet market.
 Below is a Chains structure for Down Jones Industrial Average Index Chain(0#.DJI)
 ![Chain Structure](https://developers.refinitiv.com/sites/default/files/03%20-%20ChainDataStructure_1.png)
 
-In this particular example, the chain is composed of 3 instruments (the 3 green boxes) called Chain Records or underlying Chain RIC. These Chain Record, are linked together and constitute the complete chain. You can identify whether or not the Chain Record is the last one by checking if the Record contains an EMPTY value for LONGNEXTLR field. Chain Records are made of a specific type of MarketPrice instrument specially designed for building chains. From the above picture, an application has to subscribe to the three Chain Record (0#.DJI,1#.DJI, and 2#.DJI) in order to retrieve all underlying RIC begin from ".DJI" to "XOM.N".
+In this particular example, the chain composed of 3 instruments (the three green boxes) called Chain Records or underlying Chain RIC. These Chain Record, are linked together and constitute the complete chain. You can identify whether or not the Chain Record is the last one by checking if the Record contains an EMPTY value for LONGNEXTLR field. Chain Records made of a specific type of MarketPrice instrument specially designed for building chains. From the above picture, an application has to subscribe to the three Chain Record (0#.DJI,1#.DJI, and 2#.DJI) to retrieve all underlying RIC begin from ".DJI" to "XOM.N".
 
-Chains only contain the names of their underlying RIC, not their values(e.g. AAPL.OQ from the Red arrow in the above picture). If the application wants to get a price or specific data from the underlying RIC list, it has to send a request to retrieve data for the list separately. The sample application provides only the result as underlying RIC list and it does not send item request for a RIC in the list.
+Chains only contain the names of their underlying RIC, not their values(e.g., AAPL.OQ from the Red arrow in the above picture). If the application wants to get a price or specific data from the underlying RIC list, it has to send an item request to retrieve data separately. The sample application provides only the result as underlying RIC list, and it does not send item request to get a price for a RIC in the list.
 
-The sample appication will apply the algorithms described in [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1) to create the sample application so you need to understand the Chain structure at the first step. 
+The sample application will apply the algorithms described in [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1) to create the sample application, so you need to understand the Chain structure at the first step. 
 
 ## How to expanding Chains?
 
-There are two approaches we used to process a Chains Records in this article. There are algorithms based on the suggestion from [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1). The first method uses a sequential approach to request RIC and process a Chain Records. The second method is a heuristic algorithm to optimize a Chain processing logic. It can process the chain faster than the first method especially a long Chain Records. 
+There are two approaches we used to process a Chains Records in this article. There are algorithms based on the suggestion from [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1). The first method uses a sequential approach to request RIC and process a Chain Records. The second method is a heuristic algorithm to optimize a Chain processing logic. It can handle the chain faster than the first method, especially with long Chain Records. 
 
-Using the first approach, we could assure that application retrieves all underlying Chain RIC because we send a new snapshot request to request data for the next chain RIC one by one until we found the last Chain RIC. Also, we can compare the result from the second approach with a sequential method to make sure that it returns exactly the same result.
+Using the sequential approach, we ensure that the application will get all Chain Records. It is because the app sends a new snapshot request to request data for the next chain RIC one by one until we found the last Chain RIC. Also, we can compare the result from the second approach with a sequential method to make sure that it returns precisely the same result.
 
 ### __A sequential method__
 
-The algorithm is quite straightforward with additional logic to handle the case that input Chain RIC may not start from the first index("0#") and instead it starts from another index e.g. "4#"," A#". Opening a chain is quite simple and usually done sequentially to make sure that the application will retrieve all Chain RIC from the first Chain record. Below is pseudo code we use to implements application logic for the sequential approach. 
+The algorithm is quite straightforward with additional logic to handle the case that input Chain RIC may not start from the first index("0#") and instead it starts from another index, e.g., "4#"," A#". Opening a chain is quite simple and usually done sequentially to make sure that the application will retrieve all Chain RIC from the first Chain record. Below is pseudo-code we use to implements application logic for the sequential approach. 
 
 ```
 CurrentChainRecord = Input Chain Record
@@ -59,17 +62,18 @@ do
     If PrevChainRecord is not Empty Then Open PrevChainRecord
 while NextChainRecord is not empty And PrevChainRecord is not Empty 
 ```
-Note that application has to stop immediately when it receive a Close status while expanding a Chain. We assume that we can't get the most of underlying Chains records under the condition.
+Note that the application has to stop when it receives a Close status while expanding a Chain. We assume that we can't get the most of underlying Chains records under the condition.
+
 
 ### A heuristic method to optimize a Chain expanding speed
 
 The main issue for the first method is speed and turnaround time because it has to open the Chain Record one by one. Some long Chains may take time more than an hour to retrieve all Chain Records.
 
-The heuristic algorithm was created based on a suggestion from [About chain article](https://developers.refinitiv.com/article/elektron-article-1#BetterPerformances) section "Better performance when opening long chains". We start from extracting the name of RIC root from the input Chain Record(e.g. 0#.DJI RIC root is ".DJI") and then generate a list of possible Chain Record  0#<RIC root>, 1#<RIC root>, 2#<RIC root>… , n#<RIC root>.
+The heuristic algorithm was created based on a suggestion from [About chain article](https://developers.refinitiv.com/article/elektron-article-1#BetterPerformances) section "Better performance when opening long chains". It starts from extract the name of RIC root from the input Chain Record(e.g., 0#.DJI RIC root is ".DJI"). And then generate a list of possible Chain Record  0#<RIC root>, 1#<RIC root>, 2#<RIC root>… , n#<RIC root>.
 
-The application can utilize a batch request feature from Elektron Websocket API to open only one request by passing a list of Chain Record in one batch request. The application can just process individual response for each item in the batch and skip the item which has item stream state is Closed with status code is NotFound. After the application receives all item in the batch then we can check the completion by verifying whether or not the subscription list contains First Record(Prev Link is Empty) and Last Record (Next Link is Empty). 
+The application can utilize a batch request feature from Elektron Websocket API to open only one request by passing a list of Chain Record in one batch request. The application process individual response for each item in the batch and skip the response message which the item stream state is Closed. The application can check the completion by verifying whether or not the subscription list contains First Record(Prev Link is Empty) and Last Record (Next Link is Empty). It can do after receives all item in the batch.
 
-The index of the Chain Record(e.g. 0#,10#, F#) could be a series of Base10 or Base16 number, therefore, we need to add a Base16 number "A#" to generate item list in the first batch request and then it could identifying if the Chain use Base10 or Base16.
+The index of the Chain Record(e.g., 0#,10#, F#) could be a series of Base10 or Base16 number. Therefore, we need to add a Base16 number "A#" to generate item list in the first batch request, and then it helps us identifying if the Chain use Base10 or Base16.
 
 ```
 extract RIC root from Input Chain Record
@@ -81,7 +85,7 @@ UseBase16 is False
 ChainBatch is StartIndex#<RIC root> ...  EndIndex#<RIC root>, A#<RIC root>
 Open ChainBatch using batch snapshot request
 do
-    Get RIC name from item reponse message
+    Get RIC name from the response message
     If item Stream is Closed 
     Then 
         add RIC name to Subscription list with Notfound status
@@ -109,13 +113,13 @@ while IsComplete is False
 
 ## .NET Core Implementation
 
-We will describe the core implementation of the sample application in this section. The sample application reuses WebSocket client codes from WebSocketAdapter project so we will add a new library named "ChainExpander" to the main solution. It's a .NET core library which focuses on Chain processing logic. Also, it was designed to manage a data structure used by the algorithms we talk earlier.
+We will describe the core implementation of the sample application in this section. The sample application reuses WebSocket client codes from WebSocketAdapter project so we will add a new library named "ChainExpander" to the primary solution. It's a .NET core library which focuses on Chain processing logic. Also, it was designed to manage a data structure used by the algorithms we talk earlier.
 
-By design of the WebSocket API, it sends and receives a message using JSON format so when the application receives a response message, the application needs to parse a  response message type and then it will convert JSON message to the object of MarketPriceRefreshMessage or StatusMessage class, depending on the message type. Application does not need to handle the update message because we use only snapshot request so the application will receive only Refresh or Status message.
+The WebSocket API sends or receives a message using JSON format, so when the application receives a response message, the application has to parse a  response message type at the first step.  And then convert JSON message to the object type of MarketPriceRefreshMessage or StatusMessage class, depending on the message type. The application does not need to handle the update message because we use only snapshot request so the app will receive a single Refresh or Status message.
 
-### How the application verify a valid Link fields
+### How the application verifies valid Link fields?
 
-Once it receives a Refresh message, the application needs to check if the field list contains a valid Chain data by checking field names in the list. Thus, we have created ChainTemplateEnum identify the type of Chain and it would return None if it's not a Chain RIC. We have created  GetChainTemplate method to check Chain type and it requires input as a KeyValue pair of the IDictionary<FieldName,Value>.  
+Once it receives a Refresh message, the application needs to check if the field list contains a valid Chain data by checking field names in the list. Thus, we have created ChainTemplateEnum identify the type of Chain, and it would return None if it's not a Chain RIC. We have created  GetChainTemplate method to check Chain type, and it requires input as a KeyValue pair of the IDictionary<FieldName, Value>.  
 
 Below is snippet codes of GetChainTemplate method.
 
@@ -152,7 +156,7 @@ Below is snippet codes of GetChainTemplate method.
             return ChainTemplateEnum.None;
         }
 ```
-### How the application manange a Chain Data
+### How the application handle a Chain Data?
 
 After checking a Chain, Template application needs to convert a field list to a class which implements IChain interface. The class contains only property and methods required to process chain data. IsLast and IsFirst are methods to determine if the data in this object is the first or Last Chain Record. Both methods may return true if the Chain has only one Chain Record.
 
@@ -173,9 +177,9 @@ After checking a Chain, Template application needs to convert a field list to a 
     }
 ```
 All Classes and the Interfaces to handle Chain data was designed based on below table from About chain article.
-![chaintemplate](images/chaintemplate.JPG)
+![chaintemplate](https://raw.githubusercontent.com/Refinitiv-API-Samples/Article.WebSocketAPI.DotNETCore.ChainExpanderApp/master/images/chaintemplate.JPG)
 
-The following ChainLongLink class used to handle Chain RIC which use LONGLINK template. Please find the additional class from full source files on GitHub.
+The following ChainLongLink class used to handle Chain RIC which use LONGLINK template. Please find the additional Classes from full source files on GitHub.
 
 ```c#
  internal class ChainLongLink : IChain
@@ -240,7 +244,7 @@ We use SortedDictionary in order to make it fast to access First and Last elemen
         
     }
 ```
-To verify whether the item request has been fulfilled or we still waiting for the response from the server, we have created ChainRequestStatusEnum to keep track of the request status. 
+To verify the status of the item request we have created ChainRequestStatusEnum to keep track of the request status. 
 
 ```c#
  internal enum ChainRequestStatusEnum
@@ -250,7 +254,7 @@ To verify whether the item request has been fulfilled or we still waiting for th
         NotFound = 2
     }
 ```
-The main class also use SoredDictionary to keep the item status. Once the library sends item request for a specific item, it will add KeyValue pair of RIC name and initial Wait status to the SoredDictionary. There is a _chainData object from sample codes below copied from the main ChainExpander class. 
+The main class also use SoredDictionary to keep the item status. Once the library sends item request for a specific item, it will add KeyValue pair of RIC name and initial Wait status to the SoredDictionary. There is a _chainData object from sample codes below copied from the main ChainExpander class.
 
 ```c#
   public class ChainExpander
@@ -284,10 +288,9 @@ The main class also use SoredDictionary to keep the item status. Once the librar
 }
 ```
 
-The main data processing logic was created based on the pseudo-codes from section "how to expanding chain". It uses the ChainData object and status from _chainList object to verify if the Chain subscription is completed or it has any error. 
+The primary data processing logic was created based on the pseudo-codes from section "how to expanding chain". It uses the ChainData object and status from _chainList object to verify if the subscription is complete or it has any error. 
 
-Below is snippet codes from the ProcessChainResponseMessage, it used to check if all subscription is completed and we found the first and last element then it will generate an underlying RIC list and return to the application layer.
-
+Below is snippet codes from the ProcessChainResponseMessage, it used to check if all subscription is complete and we found the first and last element then it will generate an underlying RIC list and send the result back to the application layer. 
 
 ```c#
  if ( _chainData.Count > 0  && AllReceived(_chainList))
@@ -300,24 +303,25 @@ Below is snippet codes from the ProcessChainResponseMessage, it used to check if
     ...
 }
 ```
-## Buidling and ruuning the sample application
 
-The sample application is a .NET Core console application. You can download full solution projects from GitHub. And then you can build and run the app on Platforms which supports .NET Core 2.2 or later version.
+## Building and running the sample application
+
+The sample application is a .NET Core console application. You can download full solution projects from [GitHub](https://github.com/Refinitiv-API-Samples/Article.WebSocketAPI.DotNETCore.ChainExpanderApp). And then you can build and run the app on Platforms which supports .NET Core 2.2 or later version.
 
 ### Building the application
 
 You can open a solution file WebsocketChainExpander.sln on Visual Studio 2017 or 2019 and then build or publish(menu Build->Publish WebsocketChainExpander) the console application.
 
-If you do not have Visual Studio you can just install .NET Core SDK on your OS and You may follow the following steps to build the application.
+If you do not have Visual Studio, you can install the .NET Core SDK on your OS, and you may follow the following steps to build the application.
 
-1) Run the Windows command line or using the terminal on macOS or Linux. Change folder to repository from GitHub. You should see WebsocketChainExpander.sln in that folder. Then change folder to WebsocketChainExpander folder which is main app project folder. 
+1) Run the Windows command line or using the terminal on macOS or Linux. Change folder to the repository from GitHub. You should see WebsocketChainExpander.sln in that folder. Then change folder to WebsocketChainExpander folder, which is the primary app project folder. 
 
 2) Make sure that you are running with .NET Core 2.2 or later version. Just check by running **dotnet --version**. 
 
 
 3) Run **dotnet build** and then you should see it generate WebsocketChainExpander.dll under the folder "bin\Debug\netcoreapp<.NET version>".
 
-There is an alternative choice for you to generate the executable file by using [Self Contained deployment](https://docs.microsoft.com/en-us/dotnet/core/deploying/).
+There is a choice for you to generate the executable file by using [Self Contained deployment](https://docs.microsoft.com/en-us/dotnet/core/deploying/).
 You can run **dotnet publish** command as below command where "-c release" is for release build and "release_build" is the name of the output folder.
 
 ```
@@ -325,11 +329,11 @@ dotnet publish -c release -r win-x64 -o ./release_build
 ```
 You should see folder release_build with an executable file WebsocketChainExpander.exe and required DLLs under folder WebsocketChainExpander.
 
-You can change **win-x64** to another OS and you can find the list from [rid-catalog page](https://docs.microsoft.com/en-us/dotnet/core/rid-catalog).
+You can change **win-x64** to another OS, and you can find the list from [rid-catalog page](https://docs.microsoft.com/en-us/dotnet/core/rid-catalog).
 
 ### Running the application
 
-You can run the WebsocketChainExpander.exe with the following options
+You can run the WebsocketChainExpander.exe with the following options.
 
 ```
 WebsocketChainExpander.exe -s ws://<ADS Sercer name/Ip>:<Websocket Port>/WebSocket -u <DACS User> -i <Chain RIC> --verbose
@@ -364,48 +368,7 @@ Data:
       "Text": "The record could not be found"
     }
   },
-  {
-    "ID": 19,
-    "Type": "Status",
-    "Key": {
-      "Service": "API_TEST_ORACLE1",
-      "Name": "3C#.AV.O"
-    },
-    "State": {
-      "Stream": "Closed",
-      "Data": "Suspect",
-      "Code": "NotFound",
-      "Text": "The record could not be found"
-    }
-  },
-  {
-    "ID": 16,
-    "Type": "Status",
-    "Key": {
-      "Service": "API_TEST_ORACLE1",
-      "Name": "9#.AV.O"
-    },
-    "State": {
-      "Stream": "Closed",
-      "Data": "Suspect",
-      "Code": "NotFound",
-      "Text": "The record could not be found"
-    }
-  },
-  {
-    "ID": 14,
-    "Type": "Status",
-    "Key": {
-      "Service": "API_TEST_ORACLE1",
-      "Name": "7#.AV.O"
-    },
-    "State": {
-      "Stream": "Closed",
-      "Data": "Suspect",
-      "Code": "NotFound",
-      "Text": "The record could not be found"
-    }
-  },
+   ...
   {
     "ID": 8,
     "Type": "Refresh",
@@ -462,6 +425,7 @@ Data:
   }
 ]
 ``` 
+You can find additional options by using --help
 
 ### Sample output
 
@@ -552,9 +516,9 @@ The default mode is Heuristic mode and it the result from .NET StopWatch reports
 ```
 D:\ChainExpander\WebsocketChainExpander.exe -s ws://wsserver1:15000/WebSocket -u apitest -i 0#.SETI  --seq --verbose
 ```
-It retrieves a Chain Record one by one and it reports Operation Completed in 17099 MS which is around 17 second.  It takes more time to expand long Chain record when compare with default mode. 
+It retrieves a Chain record one by one, and it reports Operation Completed in 17099 MS which is around 17 second.  It takes more time to expand long Chain record when compare with default mode. 
 
-Below is a result from sequential mode.
+Below is a result of sequential mode.
 
 ```bash
 
@@ -638,25 +602,39 @@ Also, by running the app on the same server as ADS, the default mode can be expa
 
 The following list is a known limitation we found while testing the app.
 
-1) The sample app supports only one input Chain RIC and it can not retrieve all Chain Record if one of the records is not found or has an issue. First record and Last record must appear in the list. 
+1) The sample app supports only one input Chain RIC, and it can not retrieve all Chain Record if one of the records is not found or has an issue. First record and Last record must appear in the list. 
 
-2) We found issue with some RIC such as "0#TRTSYIL=IS", it appears that Next field constructs with difference RIC name ("LONGNEXTLR": TRTSYILQ2=), and it returns the result as below list.
+2) We found an issue with some RIC such as "0#TRTSYIL=IS", it appears that Next field constructs with difference RIC name ("LONGNEXTLR": TRTSYILQ2=), and it returns the result as below list.
 ```
 0#TRTSYIL=IS,TRTSYILQ10=,TRTSYILQ11=,TRTSYILQ12=,TRTSYILQ13=,TRTSYILQ14=,TRTSYILQ15=,TRTSYILQ16=,TRTSYILQ2=,TRTSYILQ3=,TRTSYILQ4=,TRTSYILQ5=,TRTSYILQ6=,TRTSYILQ7=,TRTSYILQ8=,TRTSYILQ9=
 ```
-This kind of RIC will not work with RIC guessing algorithm and you need to run with sequential mode only.
+This kind of RIC will not work with RIC guessing algorithm, and you need to run with sequential mode instead.
 
-3) This app can expand recursive Chain RIC(e.g. 0#EURCURVES) but we do not gurantee that it will works with all Chain. And it quite slow. Also, the app will retreive a child RIC using sequential mode. You can try using heuristic mode when using recursive Chain RIC by add __--seqrecursive__ to the command line.
+3) This app can expand recursive Chain RIC(e.g., 0#EURCURVES), but we do not guarantee that it will work with all Chain. And it quite slow. Also, the app will retrieve a child RIC using sequential mode by default. You can try using heuristic mode when using recursive Chain RIC by adding __--seqrecursive__ to the command line.
 
-And please note that this application does not design to works with TREP-RT on EDP(Elektron Data Platform) which require additional steps to manage a Login Token.
+Please note that this application does not design to works with TREP-RT on EDP(Elektron Data Platform) which require additional steps to manage a Login Token.
 
 ## Summary
 
-This article explains how to apply the algorithms describes in [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1) to create Elektron Websocket API consumer application to expanding Chain RIC. There are two modes in the app. The first one is a sequential mode which sends item request one by one until it found the last record. The second approach which is faster one, it applies suggestion from the article to send a batch request with a list of Chain Record generated by RIC guessing algorithm. From a test result, it faster and reduce the number of a request message that the application needs to send to the server. Anyway, the sequential mode still useful when the number of Chain Record is not much, and we need to ensure that application is retrieving all record in the Chain.
+This article explains how to apply the algorithms describes in [About chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1) to create Elektron Websocket API consumer application to expanding Chain RIC. There are two modes in the app. The first one is a sequential mode which sends item request one by one until it found the last record. The second approach which is faster one, it applies suggestion from the article to send a batch request with a list of Chain Record generated by RIC guessing algorithm. From a test result, it faster and reduce the number of a request message that the application needs to send to the server. Anyway, the sequential mode still useful in a scenario that the number of Chain Record is not much. And we need to ensure that application is retrieving all Chain record under the Root Chain RIC.
 
-## Referrence
+## Contributing
+
+Please read [CONTRIBUTING.md](https://gist.github.com/PurpleBooth/b24679402957c63ec426) for details on our code of conduct, and the process for submitting pull requests to us.
+
+## Authors
+
+* **Moragodkrit Chumsri** - Release 1.0.  *Initial work*
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+## References
 
 * [About Chain article](https://developers.refinitiv.com/article/simple-chain-objects-ema-part-1)
 * [Elektron WebSocket API](https://developers.refinitiv.com/elektron/WebSocket-api/learning)
 * [WebSocket API Developer Guide](https://docs-developers.refinitiv.com/1563871102906/14977/)
 * [.NET Core RID Catalog](https://docs.microsoft.com/en-us/dotnet/core/rid-catalog).
+* [Dotnet Core Publish Command](https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-publish?tabs=netcore21)
+* [.NET Commandlineparser](https://github.com/commandlineparser/commandline)
