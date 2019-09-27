@@ -610,7 +610,7 @@ The following list is a known limitation we found while testing the app.
 ```
 This kind of RIC will not work with RIC guessing algorithm, and you need to run with sequential mode instead.
 
-3) This app can expand recursive Chain RIC(e.g., 0#EURCURVES), but we do not guarantee that it will work with all Chain. And it quite slow. Also, the app will retrieve a child RIC using sequential mode by default. You can try using heuristic mode when using recursive Chain RIC by adding __--seqrecursive__ to the command line.
+3) This app can expand recursive Chain RIC(e.g., 0#EURCURVES), but we do not guarantee that it will work with all Chain. And it quite slow. Also, the app will retrieve a child RIC using heuristic mode by default. You can try using sequential mode when using recursive Chain RIC by adding __--seqrecursive__ to the command line.
 
 Please note that this application does not design to works with TREP-RT on EDP(Elektron Data Platform) which require additional steps to manage a Login Token.
 
